@@ -1,6 +1,23 @@
 alter table public.empresas
 add column if not exists como_se_paga text[] not null default '{}';
 
+create or replace function public.build_empresa_search_document(
+  p_nombre text,
+  p_descripcion text,
+  p_como_se_paga text[],
+  p_tags text[]
+)
+returns tsvector
+language sql
+immutable
+as $$
+  select
+    setweight(to_tsvector('spanish', coalesce(p_nombre, '')), 'A') ||
+    setweight(to_tsvector('spanish', coalesce(p_descripcion, '')), 'B') ||
+    setweight(to_tsvector('spanish', coalesce(array_to_string(p_como_se_paga, ' '), '')), 'B') ||
+    setweight(to_tsvector('spanish', coalesce(array_to_string(p_tags, ' '), '')), 'C');
+$$;
+
 drop index if exists empresas_search_document_idx;
 
 alter table public.empresas
@@ -8,10 +25,7 @@ drop column if exists search_document;
 
 alter table public.empresas
 add column search_document tsvector generated always as (
-  setweight(to_tsvector('spanish', coalesce(nombre, '')), 'A') ||
-  setweight(to_tsvector('spanish', coalesce(descripcion, '')), 'B') ||
-  setweight(to_tsvector('spanish', coalesce(array_to_string(como_se_paga, ' '), '')), 'B') ||
-  setweight(to_tsvector('spanish', coalesce(array_to_string(tags, ' '), '')), 'C')
+  public.build_empresa_search_document(nombre, descripcion, como_se_paga, tags)
 ) stored;
 
 create index if not exists empresas_search_document_idx on public.empresas using gin (search_document);

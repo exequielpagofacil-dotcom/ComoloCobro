@@ -18,6 +18,23 @@ create table if not exists public.metodos_cobro (
   constraint metodos_cobro_slug_lowercase check (slug = lower(slug))
 );
 
+create or replace function public.build_empresa_search_document(
+  p_nombre text,
+  p_descripcion text,
+  p_como_se_paga text[],
+  p_tags text[]
+)
+returns tsvector
+language sql
+immutable
+as $$
+  select
+    setweight(to_tsvector('spanish', coalesce(p_nombre, '')), 'A') ||
+    setweight(to_tsvector('spanish', coalesce(p_descripcion, '')), 'B') ||
+    setweight(to_tsvector('spanish', coalesce(array_to_string(p_como_se_paga, ' '), '')), 'B') ||
+    setweight(to_tsvector('spanish', coalesce(array_to_string(p_tags, ' '), '')), 'C');
+$$;
+
 create table if not exists public.empresas (
   id uuid primary key default gen_random_uuid(),
   nombre text not null,
@@ -36,10 +53,7 @@ create table if not exists public.empresas (
   created_at timestamptz not null default timezone('utc', now()),
   updated_at timestamptz not null default timezone('utc', now()),
   search_document tsvector generated always as (
-    setweight(to_tsvector('spanish', coalesce(nombre, '')), 'A') ||
-    setweight(to_tsvector('spanish', coalesce(descripcion, '')), 'B') ||
-    setweight(to_tsvector('spanish', coalesce(array_to_string(como_se_paga, ' '), '')), 'B') ||
-    setweight(to_tsvector('spanish', coalesce(array_to_string(tags, ' '), '')), 'C')
+    public.build_empresa_search_document(nombre, descripcion, como_se_paga, tags)
   ) stored,
   constraint empresas_slug_lowercase check (slug = lower(slug))
 );
