@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { ImagePlus, PlusCircle, X } from "lucide-react";
+import { CategoryCombobox } from "@/components/admin/category-combobox";
 import { StepEditor, type EditableStep } from "@/components/admin/step-editor";
 import { TagsInput } from "@/components/admin/tags-input";
 import type { ApiResponse, Categoria, Empresa, MetodoCobroSugerido } from "@/lib/types";
@@ -22,8 +23,6 @@ type UploadResponse = {
   };
   error?: string;
 };
-
-const NEW_CATEGORY_VALUE = "__create_category__";
 
 function sortCategories(categories: Categoria[]): Categoria[] {
   return [...categories].sort((a, b) => a.orden - b.orden || a.nombre.localeCompare(b.nombre));
@@ -262,34 +261,14 @@ export function CompanyForm({
 
             <div>
               <label className="mb-2 block text-sm font-semibold text-foreground">Categoria</label>
-              <select
-                value={
-                  companyCategories.some((category) => category.id === form.categoria_id)
-                    ? form.categoria_id
-                    : ""
+              <CategoryCombobox
+                categories={companyCategories}
+                selectedCategoryId={form.categoria_id}
+                onSelectCategory={(categoria_id) =>
+                  setForm((currentForm) => ({ ...currentForm, categoria_id }))
                 }
-                onChange={(event) => {
-                  if (event.target.value === NEW_CATEGORY_VALUE) {
-                    openCategoryCreator();
-                    return;
-                  }
-
-                  setForm((currentForm) => ({ ...currentForm, categoria_id: event.target.value }));
-                }}
-                className="h-12 w-full rounded-2xl border border-admin/15 bg-white px-4"
-              >
-                <option value="" disabled>
-                  {companyCategories.length === 0
-                    ? "Primero crea una categoria"
-                    : "Selecciona una categoria"}
-                </option>
-                {companyCategories.map((category) => (
-                  <option key={category.id} value={category.id}>
-                    {category.nombre}
-                  </option>
-                ))}
-                <option value={NEW_CATEGORY_VALUE}>+ Crear categoria nueva</option>
-              </select>
+                onCreateCategory={openCategoryCreator}
+              />
             </div>
 
             <div className="lg:col-span-2">
@@ -550,7 +529,7 @@ export function CompanyForm({
               </button>
             </div>
 
-            <div className="mt-6 grid gap-4 sm:grid-cols-3">
+            <div className="mt-6 grid gap-4 sm:grid-cols-[1fr_160px]">
               <div>
                 <label className="mb-2 block text-sm font-semibold text-foreground">Nombre</label>
                 <input
@@ -575,50 +554,10 @@ export function CompanyForm({
               </div>
 
               <div>
-                <label className="mb-2 block text-sm font-semibold text-foreground">Icono</label>
-                <input
-                  value={categoryDraft.icono}
-                  onChange={(event) =>
-                    setCategoryDraft((currentDraft) => ({
-                      ...currentDraft,
-                      icono: event.target.value,
-                    }))
-                  }
-                  onKeyDown={(event) => {
-                    if (event.key !== "Enter") {
-                      return;
-                    }
-
-                    event.preventDefault();
-                    void handleCreateCategory();
-                  }}
-                  className="h-12 w-full rounded-2xl border border-admin/15 bg-white px-4"
-                  placeholder="Building2"
-                />
-              </div>
-
-              <div>
                 <label className="mb-2 block text-sm font-semibold text-foreground">Orden</label>
-                <input
-                  type="number"
-                  value={categoryDraft.orden}
-                  onChange={(event) =>
-                    setCategoryDraft((currentDraft) => ({
-                      ...currentDraft,
-                      orden: Number(event.target.value),
-                    }))
-                  }
-                  onKeyDown={(event) => {
-                    if (event.key !== "Enter") {
-                      return;
-                    }
-
-                    event.preventDefault();
-                    void handleCreateCategory();
-                  }}
-                  className="h-12 w-full rounded-2xl border border-admin/15 bg-white px-4"
-                  placeholder="0"
-                />
+                <div className="flex h-12 items-center rounded-2xl border border-admin/15 bg-slate-50 px-4 text-sm font-semibold text-foreground/65">
+                  {categoryDraft.orden}
+                </div>
               </div>
             </div>
 

@@ -17,16 +17,30 @@ type DeleteResponse = {
   error?: string;
 };
 
-const initialFormState = {
-  nombre: "",
-  icono: "Building2",
-  orden: 0,
-};
+function sortCategories(categories: Categoria[]): Categoria[] {
+  return [...categories].sort((a, b) => a.orden - b.orden || a.nombre.localeCompare(b.nombre));
+}
+
+function getNextCategoryOrder(categories: Categoria[]): number {
+  if (categories.length === 0) {
+    return 0;
+  }
+
+  return Math.max(...categories.map((category) => category.orden), 0) + 1;
+}
+
+function buildInitialFormState(categories: Categoria[]) {
+  return {
+    nombre: "",
+    icono: "Building2",
+    orden: getNextCategoryOrder(categories),
+  };
+}
 
 export function CategoriesManager({ initialCategories }: CategoriesManagerProps) {
-  const [categories, setCategories] = useState(initialCategories);
+  const [categories, setCategories] = useState(() => sortCategories(initialCategories));
   const [editingId, setEditingId] = useState<string | null>(null);
-  const [form, setForm] = useState(initialFormState);
+  const [form, setForm] = useState(() => buildInitialFormState(initialCategories));
   const [error, setError] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
 
@@ -44,36 +58,32 @@ export function CategoriesManager({ initialCategories }: CategoriesManagerProps)
         id: editingId,
         nombre: form.nombre,
         icono: form.icono,
-        orden: Number(form.orden),
+        orden: form.orden,
       }),
     });
 
     const payload = (await response.json()) as CategoryResponse;
 
     if (!response.ok || !payload.data) {
-      setError(payload.error ?? "No se pudo guardar la categoría");
+      setError(payload.error ?? "No se pudo guardar la categoria");
       return;
     }
 
-    startTransition(() => {
-      setCategories((currentCategories) => {
-        if (editingId) {
-          return currentCategories
-            .map((category) => (category.id === editingId ? payload.data ?? category : category))
-            .sort((a, b) => a.orden - b.orden || a.nombre.localeCompare(b.nombre));
-        }
+    const nextCategories = editingId
+      ? sortCategories(
+          categories.map((category) => (category.id === editingId ? payload.data ?? category : category)),
+        )
+      : sortCategories([...categories, payload.data]);
 
-        return [...currentCategories, payload.data!].sort(
-          (a, b) => a.orden - b.orden || a.nombre.localeCompare(b.nombre),
-        );
-      });
+    startTransition(() => {
+      setCategories(nextCategories);
       setEditingId(null);
-      setForm(initialFormState);
+      setForm(buildInitialFormState(nextCategories));
     });
   }
 
   async function handleDelete(id: string) {
-    if (!window.confirm("¿Querés borrar esta categoría?")) {
+    if (!window.confirm("Quieres borrar esta categoria?")) {
       return;
     }
 
@@ -89,11 +99,16 @@ export function CategoriesManager({ initialCategories }: CategoriesManagerProps)
     const payload = (await response.json()) as DeleteResponse;
 
     if (!response.ok) {
-      setError(payload.error ?? "No se pudo borrar la categoría");
+      setError(payload.error ?? "No se pudo borrar la categoria");
       return;
     }
 
-    setCategories((currentCategories) => currentCategories.filter((category) => category.id !== id));
+    const nextCategories = categories.filter((category) => category.id !== id);
+    setCategories(nextCategories);
+
+    if (!editingId) {
+      setForm(buildInitialFormState(nextCategories));
+    }
   }
 
   function startEditing(category: Categoria) {
@@ -107,7 +122,7 @@ export function CategoriesManager({ initialCategories }: CategoriesManagerProps)
 
   function resetForm() {
     setEditingId(null);
-    setForm(initialFormState);
+    setForm(buildInitialFormState(categories));
     setError(null);
   }
 
@@ -115,9 +130,9 @@ export function CategoriesManager({ initialCategories }: CategoriesManagerProps)
     <div className="grid gap-6 lg:grid-cols-[0.95fr_1.05fr]">
       <form onSubmit={handleSubmit} className="admin-surface rounded-[32px] p-6">
         <div className="mb-6">
-          <p className="text-sm font-semibold uppercase tracking-[0.22em] text-admin">Categoría</p>
+          <p className="text-sm font-semibold uppercase tracking-[0.22em] text-admin">Categoria</p>
           <h2 className="mt-2 text-2xl font-bold tracking-tight text-foreground">
-            {editingId ? "Editar categoría" : "Crear categoría"}
+            {editingId ? "Editar categoria" : "Crear categoria"}
           </h2>
         </div>
 
@@ -128,30 +143,15 @@ export function CategoriesManager({ initialCategories }: CategoriesManagerProps)
               value={form.nombre}
               onChange={(event) => setForm((current) => ({ ...current, nombre: event.target.value }))}
               className="h-12 w-full rounded-2xl border border-admin/15 bg-white px-4"
-              placeholder="Servicios públicos"
-            />
-          </div>
-
-          <div>
-            <label className="mb-2 block text-sm font-semibold text-foreground">Ícono Lucide</label>
-            <input
-              value={form.icono}
-              onChange={(event) => setForm((current) => ({ ...current, icono: event.target.value }))}
-              className="h-12 w-full rounded-2xl border border-admin/15 bg-white px-4"
-              placeholder="Building2"
+              placeholder="Servicios publicos"
             />
           </div>
 
           <div>
             <label className="mb-2 block text-sm font-semibold text-foreground">Orden</label>
-            <input
-              type="number"
-              value={form.orden}
-              onChange={(event) =>
-                setForm((current) => ({ ...current, orden: Number(event.target.value) }))
-              }
-              className="h-12 w-full rounded-2xl border border-admin/15 bg-white px-4"
-            />
+            <div className="flex h-12 items-center rounded-2xl border border-admin/15 bg-slate-50 px-4 text-sm font-semibold text-foreground/65">
+              {form.orden}
+            </div>
           </div>
 
           {error ? <p className="text-sm font-medium text-red-600">{error}</p> : null}
@@ -162,7 +162,7 @@ export function CategoriesManager({ initialCategories }: CategoriesManagerProps)
               disabled={isPending}
               className="flex-1 rounded-2xl bg-admin px-5 py-3 font-semibold text-white transition hover:bg-brand-dark"
             >
-              {editingId ? "Guardar cambios" : "Crear categoría"}
+              {editingId ? "Guardar cambios" : "Crear categoria"}
             </button>
             {editingId ? (
               <button
@@ -183,8 +183,10 @@ export function CategoriesManager({ initialCategories }: CategoriesManagerProps)
             <FolderTree className="h-5 w-5" />
           </div>
           <div>
-            <h2 className="text-2xl font-bold tracking-tight text-foreground">Categorías cargadas</h2>
-            <p className="text-sm text-foreground/65">No se pueden borrar si tienen empresas asociadas.</p>
+            <h2 className="text-2xl font-bold tracking-tight text-foreground">Categorias cargadas</h2>
+            <p className="text-sm text-foreground/65">
+              No se pueden borrar si tienen empresas asociadas.
+            </p>
           </div>
         </div>
 
@@ -196,9 +198,7 @@ export function CategoriesManager({ initialCategories }: CategoriesManagerProps)
             >
               <div>
                 <p className="font-semibold text-foreground">{category.nombre}</p>
-                <p className="mt-1 text-sm text-foreground/55">
-                  {category.icono ?? "Building2"} · orden {category.orden}
-                </p>
+                <p className="mt-1 text-sm text-foreground/55">Orden {category.orden}</p>
               </div>
 
               <div className="flex items-center gap-3">
@@ -222,7 +222,7 @@ export function CategoriesManager({ initialCategories }: CategoriesManagerProps)
 
           {categories.length === 0 ? (
             <div className="rounded-[24px] border border-dashed border-admin/20 px-6 py-10 text-center text-foreground/60">
-              Todavía no hay categorías cargadas.
+              Todavia no hay categorias cargadas.
             </div>
           ) : null}
         </div>
