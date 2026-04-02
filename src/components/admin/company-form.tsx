@@ -4,7 +4,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { ImagePlus } from "lucide-react";
+import { ImagePlus, PlusCircle } from "lucide-react";
 import { StepEditor, type EditableStep } from "@/components/admin/step-editor";
 import { TagsInput } from "@/components/admin/tags-input";
 import type { ApiResponse, Categoria, Empresa, MetodoCobroSugerido } from "@/lib/types";
@@ -22,6 +22,28 @@ type UploadResponse = {
   };
   error?: string;
 };
+
+const NEW_CATEGORY_VALUE = "__create_category__";
+
+function sortCategories(categories: Categoria[]): Categoria[] {
+  return [...categories].sort((a, b) => a.orden - b.orden || a.nombre.localeCompare(b.nombre));
+}
+
+function getNextCategoryOrder(categories: Categoria[]): number {
+  if (categories.length === 0) {
+    return 0;
+  }
+
+  return Math.max(...categories.map((category) => category.orden), 0) + 1;
+}
+
+function buildCategoryDraft(categories: Categoria[]) {
+  return {
+    nombre: "",
+    icono: "Building2",
+    orden: getNextCategoryOrder(categories),
+  };
+}
 
 function mapCompanySteps(company?: Empresa | null): EditableStep[] {
   if (!company || company.pasos.length === 0) {
@@ -46,10 +68,15 @@ export function CompanyForm({
   const router = useRouter();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [isPending, startTransition] = useTransition();
+  const [companyCategories, setCompanyCategories] = useState(() => sortCategories(categories));
+  const [showCategoryCreator, setShowCategoryCreator] = useState(categories.length === 0);
+  const [creatingCategory, setCreatingCategory] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [categoryError, setCategoryError] = useState<string | null>(null);
   const [slugEdited, setSlugEdited] = useState(Boolean(initialCompany));
   const [steps, setSteps] = useState<EditableStep[]>(mapCompanySteps(initialCompany));
   const [uploadingLogo, setUploadingLogo] = useState(false);
+  const [categoryDraft, setCategoryDraft] = useState(() => buildCategoryDraft(categories));
   const [form, setForm] = useState({
     nombre: initialCompany?.nombre ?? "",
     slug: initialCompany?.slug ?? "",
@@ -87,6 +114,45 @@ export function CompanyForm({
 
     setForm((currentForm) => ({ ...currentForm, logo_url: payload.data?.url ?? "" }));
     setUploadingLogo(false);
+  }
+
+  async function handleCreateCategory() {
+    if (creatingCategory) {
+      return;
+    }
+
+    setCategoryError(null);
+    setCreatingCategory(true);
+
+    try {
+      const response = await fetch("/api/categorias", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(categoryDraft),
+      });
+
+      const payload = (await response.json()) as ApiResponse<Categoria>;
+
+      if (!response.ok || !payload.data) {
+        setCategoryError(payload.error ?? "No se pudo crear la categoria");
+        return;
+      }
+
+      const nextCategories = sortCategories([...companyCategories, payload.data]);
+
+      setCompanyCategories(nextCategories);
+      setForm((currentForm) => ({ ...currentForm, categoria_id: payload.data?.id ?? "" }));
+      setCategoryDraft(buildCategoryDraft(nextCategories));
+      setShowCategoryCreator(false);
+    } catch (creationError) {
+      setCategoryError(
+        creationError instanceof Error ? creationError.message : "No se pudo crear la categoria",
+      );
+    } finally {
+      setCreatingCategory(false);
+    }
   }
 
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
@@ -183,24 +249,157 @@ export function CompanyForm({
             </div>
 
             <div>
-              <label className="mb-2 block text-sm font-semibold text-foreground">Categoría</label>
+              <label className="mb-2 block text-sm font-semibold text-foreground">Categoria</label>
               <select
-                value={form.categoria_id}
-                onChange={(event) =>
-                  setForm((currentForm) => ({ ...currentForm, categoria_id: event.target.value }))
+                value={
+                  companyCategories.some((category) => category.id === form.categoria_id)
+                    ? form.categoria_id
+                    : ""
                 }
+                onChange={(event) => {
+                  if (event.target.value === NEW_CATEGORY_VALUE) {
+                    setShowCategoryCreator(true);
+                    setCategoryError(null);
+                    setCategoryDraft(buildCategoryDraft(companyCategories));
+                    return;
+                  }
+
+                  setShowCategoryCreator(false);
+                  setCategoryError(null);
+                  setForm((currentForm) => ({ ...currentForm, categoria_id: event.target.value }));
+                }}
                 className="h-12 w-full rounded-2xl border border-admin/15 bg-white px-4"
               >
-                {categories.map((category) => (
+                <option value="" disabled>
+                  {companyCategories.length === 0
+                    ? "Primero crea una categoria"
+                    : "Selecciona una categoria"}
+                </option>
+                {companyCategories.map((category) => (
                   <option key={category.id} value={category.id}>
                     {category.nombre}
                   </option>
                 ))}
+                <option value={NEW_CATEGORY_VALUE}>+ Crear categoria nueva</option>
               </select>
+
+              {showCategoryCreator ? (
+                <div className="mt-4 rounded-[24px] border border-admin/15 bg-admin-soft/55 p-4">
+                  <div className="flex items-start justify-between gap-4">
+                    <div>
+                      <p className="text-sm font-semibold uppercase tracking-[0.18em] text-admin">
+                        Nueva categoria
+                      </p>
+                      <p className="mt-1 text-sm text-foreground/65">
+                        Se guarda al instante y queda seleccionada para esta empresa.
+                      </p>
+                    </div>
+
+                    {companyCategories.length > 0 ? (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setShowCategoryCreator(false);
+                          setCategoryError(null);
+                          setCategoryDraft(buildCategoryDraft(companyCategories));
+                        }}
+                        className="rounded-full border border-admin/15 bg-white px-3 py-1.5 text-sm font-medium text-foreground/70"
+                      >
+                        Cancelar
+                      </button>
+                    ) : null}
+                  </div>
+
+                  <div className="mt-4 grid gap-3 lg:grid-cols-3">
+                    <input
+                      value={categoryDraft.nombre}
+                      onChange={(event) =>
+                        setCategoryDraft((currentDraft) => ({
+                          ...currentDraft,
+                          nombre: event.target.value,
+                        }))
+                      }
+                      onKeyDown={(event) => {
+                        if (event.key !== "Enter") {
+                          return;
+                        }
+
+                        event.preventDefault();
+                        void handleCreateCategory();
+                      }}
+                      className="h-11 rounded-2xl border border-admin/15 bg-white px-4"
+                      placeholder="Nombre"
+                    />
+                    <input
+                      value={categoryDraft.icono}
+                      onChange={(event) =>
+                        setCategoryDraft((currentDraft) => ({
+                          ...currentDraft,
+                          icono: event.target.value,
+                        }))
+                      }
+                      onKeyDown={(event) => {
+                        if (event.key !== "Enter") {
+                          return;
+                        }
+
+                        event.preventDefault();
+                        void handleCreateCategory();
+                      }}
+                      className="h-11 rounded-2xl border border-admin/15 bg-white px-4"
+                      placeholder="Icono Lucide"
+                    />
+                    <input
+                      type="number"
+                      value={categoryDraft.orden}
+                      onChange={(event) =>
+                        setCategoryDraft((currentDraft) => ({
+                          ...currentDraft,
+                          orden: Number(event.target.value),
+                        }))
+                      }
+                      onKeyDown={(event) => {
+                        if (event.key !== "Enter") {
+                          return;
+                        }
+
+                        event.preventDefault();
+                        void handleCreateCategory();
+                      }}
+                      className="h-11 rounded-2xl border border-admin/15 bg-white px-4"
+                      placeholder="Orden"
+                    />
+                  </div>
+
+                  <div className="mt-4 flex flex-wrap items-center gap-3">
+                    <button
+                      type="button"
+                      onClick={() => void handleCreateCategory()}
+                      disabled={creatingCategory}
+                      className="inline-flex items-center gap-2 rounded-2xl bg-admin px-4 py-2.5 font-semibold text-white transition hover:bg-brand-dark disabled:cursor-not-allowed disabled:opacity-70"
+                    >
+                      <PlusCircle className="h-4 w-4" />
+                      {creatingCategory ? "Creando..." : "Crear y usar"}
+                    </button>
+                    <Link
+                      href="/admin/categorias"
+                      className="text-sm font-semibold text-admin underline underline-offset-4"
+                    >
+                      Administrar categorias
+                    </Link>
+                  </div>
+
+                  {categoryError ? (
+                    <p className="mt-3 text-sm font-medium text-red-600">{categoryError}</p>
+                  ) : null}
+                </div>
+              ) : null}
             </div>
 
             <div className="lg:col-span-2">
-              <label className="mb-2 block text-sm font-semibold text-foreground">Descripción en Markdown</label>
+              <label className="mb-2 block text-sm font-semibold text-foreground">
+                Descripcion en Markdown
+              </label>
               <textarea
                 value={form.descripcion}
                 onChange={(event) =>
@@ -208,7 +407,7 @@ export function CompanyForm({
                 }
                 rows={8}
                 className="w-full rounded-2xl border border-admin/15 bg-white px-4 py-3"
-                placeholder="Explicá cómo procesar el cobro con pasos y aclaraciones."
+                placeholder="Explica como procesar el cobro con pasos y aclaraciones."
               />
             </div>
 
@@ -238,7 +437,9 @@ export function CompanyForm({
             </div>
 
             <div className="lg:col-span-2">
-              <label className="mb-2 block text-sm font-semibold text-foreground">Como se paga</label>
+              <label className="mb-2 block text-sm font-semibold text-foreground">
+                Como se paga
+              </label>
               <TagsInput
                 tags={form.como_se_paga}
                 onChange={(como_se_paga) =>
@@ -327,7 +528,7 @@ export function CompanyForm({
         <aside className="admin-surface rounded-[32px] p-6">
           <h3 className="text-2xl font-bold tracking-tight text-foreground">Logo</h3>
           <p className="mt-2 text-sm leading-6 text-foreground/65">
-            Se guarda en el bucket público <code>media</code> de Supabase Storage.
+            Se guarda en el bucket publico <code>media</code> de Supabase Storage.
           </p>
 
           <div className="mt-5 overflow-hidden rounded-[28px] bg-admin-soft">
@@ -380,7 +581,7 @@ export function CompanyForm({
                 setForm((currentForm) => ({ ...currentForm, logo_url: event.target.value }))
               }
               className="h-12 w-full rounded-2xl border border-admin/15 bg-white px-4 text-sm"
-              placeholder="URL pública del logo"
+              placeholder="URL publica del logo"
             />
           </div>
         </aside>
@@ -390,9 +591,10 @@ export function CompanyForm({
         <StepEditor steps={steps} onChange={setSteps} />
       </div>
 
-      {categories.length === 0 ? (
+      {companyCategories.length === 0 ? (
         <div className="rounded-[24px] border border-yellow-200 bg-yellow-50 px-5 py-4 text-sm text-yellow-800">
-          Necesitás al menos una categoría antes de guardar una empresa. Podés crearla en{" "}
+          Necesitas al menos una categoria antes de guardar una empresa. Podes crearla abajo del
+          selector o en{" "}
           <Link href="/admin/categorias" className="font-semibold underline">
             /admin/categorias
           </Link>
@@ -405,7 +607,7 @@ export function CompanyForm({
       <div className="flex flex-wrap gap-3">
         <button
           type="submit"
-          disabled={isPending || categories.length === 0}
+          disabled={isPending || companyCategories.length === 0}
           className="rounded-2xl bg-admin px-6 py-3 font-semibold text-white transition hover:bg-brand-dark disabled:cursor-not-allowed disabled:opacity-70"
         >
           {isPending ? "Guardando..." : "Guardar empresa"}
