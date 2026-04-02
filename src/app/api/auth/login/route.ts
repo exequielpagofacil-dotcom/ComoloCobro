@@ -6,7 +6,14 @@ import { jsonError } from "@/lib/http";
 import { loginSchema } from "@/lib/validations";
 
 export async function POST(request: Request) {
-  const body = await request.json();
+  let body: unknown;
+
+  try {
+    body = await request.json();
+  } catch {
+    return jsonError("La solicitud no es válida", 400);
+  }
+
   const parsedBody = loginSchema.safeParse(body);
 
   if (!parsedBody.success) {
@@ -15,7 +22,7 @@ export async function POST(request: Request) {
 
   const validPassword = await bcrypt.compare(
     parsedBody.data.password,
-    getRequiredEnv("ADMIN_PASSWORD_HASH"),
+    getRequiredEnv("ADMIN_PASSWORD_HASH").trim(),
   );
 
   if (!validPassword) {
